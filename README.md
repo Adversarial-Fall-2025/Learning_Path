@@ -1,7 +1,7 @@
 # PandaHat-Adversarial-Research
 This project explores adversarial attacks on machine learning models, focusing on improving computational efficiency and reducing energy consumption. Conducted as part of our work with CAHSI and MIT Lincoln Labs, the research aims to enhance the resilience of AI models while understanding the mathematical principles behind adversarial attacks.
 
-This research is divided into two groups: "ChatGPT" and "DeepSeek".
+This research is divided into two groups: "Power_Consumption" and "Learning_Path".
 The first group focuses in learning and finding new ways to improve computational efficiency and reducing energy consumption within AI models. The second group focuses in learning the fundamentals and mathematic concepts of AI, specifically Neural Networks.
 
 ## Documentation:
