@@ -31,8 +31,8 @@ Markdown allows us to create well-organized and readable notes, which helps keep
     ...
 3. Clone the Repository into your VSCode (Make sure that you are signed in to your github account in VSCode!)
 4. To create your Jupyter Notebook, 
-    - Enter the Notebook_Spring2025 folder, create your own folder with this name **"INITIALS_GroupName"**. Example: RMQV_DeepSeek
-    - For the Jupyter Notebook add a new file with this format **"task_INITIALS_Version.ipynb"**.  Example : task1_RMQV_V1.ipynb
+    - Enter the Notebook Folder
+    - For the Jupyter Notebook add a new file with this format **"task_INITIALS_Version.ipynb"**.  Example : task1_RMQV_V9.07.ipynb
 5. Once the Jupyter Notebook file is created, configure the Kernel:
     - In the upper right corner Select Kernel, then Python, then Virtual Environment (.venv (Python)).
 
