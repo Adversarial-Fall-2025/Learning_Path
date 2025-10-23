@@ -30,20 +30,35 @@ def image_preprocess(sample, label):
 	print(f"Different Sized Labels: {len(differentSizeLabels)}")
 
 image_preprocess(sample, labels)
-def image_analysis(sample,labels):
-	#Analisis para los primeros 10 samples y labels
-	for t in range(10):
-		l = tifffile.imread(f"labels/{labels[t]}") 	
-		s = tifffile.imread(f"samples/{sample[t]}") 
-		print("Pixel analysis of SAMPLE")
-		print("        R     G     B")
 
-		for i in range(10): #Analisis de los primeros 10 pixeles en imagenes de sample y labels
-			pixel = s[1,i]
-			print(f"Sample Pixel#{i+1} {pixel}")
-			lpixel = l[1,i]
-			NDVI_Value = ((int(lpixel)) - int(pixel[0]))/(int((lpixel)) + int(pixel[0])) #Calculo para valor NDVI de cada pixel analisado
-			print(f"Label Pixel#{i+1}, NDVI Value: {np.round(NDVI_Value, 4)}")
+def min_max_finder(labels):
+	min_val = float('inf')
+	max_val = float('-inf')
 
-image_analysis(sample, labels)
+	for label_img in labels:
+		img = tifffile.imread(f"{label_folder}/{label_img}")
+		current_min = np.min(img)
+		current_max = np.max(img)
+
+		if current_min < min_val:
+			min_val = current_min
+		if current_max > max_val:
+			max_val = current_max
+
+	return min_val, max_val
+
+def ndvi_normalization(labels):
+#Normalization of NDVI pixels in labels. 
+	NDVI_Values = []
+	min_val, max_val = min_max_finder(labels)
+	
+	for label_img in range(5):
+		img = tifffile.imread(f"{label_folder}/{labels[label_img]}").astype(float)
+		normalized_NDVI = ((img - min_val)/(max_val - min_val)) * 2-1
+		normalized_NDVI = np.clip(normalized_NDVI, -1,1)
+		
+		NDVI_Values.append(normalized_NDVI)
+	return NDVI_Values
+
+print(f"NDVI values of the first 5 images: {ndvi_normalization(labels)}")
 print("---------------EOF---------------")
