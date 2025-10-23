@@ -1,30 +1,45 @@
 import numpy as np
 import tifffile
 import os
+#from collections import Counter
 
 sample_folder = "C:/Users/Carlos Escobar/Desktop/CLASSES/PandaHat Adversarial/Task_1/samples"
 sample = [i for i in os.listdir(sample_folder) if i.endswith(".tiff") or i.endswith(".tif")]
 label_folder = "C:/Users/Carlos Escobar/Desktop/CLASSES/PandaHat Adversarial/Task_1/labels"
 labels = [h for h in os.listdir(label_folder) if h.endswith(".tiff") or h.endswith(".tif")]
 
-def image_analysis(sample,labels):
-        #Calculo de valores NDVI para todas las imagenes. 
-        NDVI_Values = [] 
-        if len(sample) == len(labels):
-                for sample_file, label_file in zip(sample,labels): 
-                        l = tifffile.imread(f"{label_folder}/{label_file}")
-                        s = tifffile.imread(f"{sample_folder}/{sample_file}")
-                        
-                        NDVI = (l.astype(float) - s[:,:,0].astype(float))/ (l.astype(float) + s[:,:,0].astype(float) + 1e-6) 
-                        NDVI_Values.append(NDVI)  
-        else:
-                print("Cannot complete analysis, Samples and Labels are NOT of equal length")
-        return NDVI_Values
-NDVI_list = image_analysis(sample,labels)
-#print(NDVI_list[0].shape)
-#print(NDVI_list[0][:5,:5])
-#print(f"Lenght of NDVI Values list: {len(NDVI_list)}")
-#print(f"Lenght of NDVI Values list[0]: {len(NDVI_list[0])}")
+def min_max_finder(labels):
+	#Searching for min and max in scaled NDVI values
+	min_val = float('inf')
+	max_val = float('-inf')
+
+	for label_img in labels:
+		img = tifffile.imread(f"{label_folder}/{label_img}")
+		current_min = np.min(img)
+		current_max = np.max(img)
+
+		if current_min < min_val:
+			min_val = current_min
+		if current_max > max_val:
+			max_val = current_max
+
+	return min_val, max_val
+
+def ndvi_normalization(labels):
+	#Normalization for NDVI values of labels img pixels
+	NDVI_Values = []
+	min_val, max_val = min_max_finder(labels)
+	
+	for label_img in labels:
+		img = tifffile.imread(f"{label_folder}/{label_img}").astype(float)
+			#Ensuring NDVI value [-1,1]
+		normalized_NDVI = ((img - min_val)/(max_val - min_val)) * 2-1
+		normalized_NDVI = np.clip(normalized_NDVI, -1,1) 
+		
+		NDVI_Values.append(normalized_NDVI)
+	return NDVI_Values
+
+NDVI_list = ndvi_normalization(labels)
 
 def feature_selection(NDVI_list):
 	X = []
@@ -41,7 +56,9 @@ def feature_selection(NDVI_list):
 	return X,y
 
 X,y = feature_selection(NDVI_list)
-#print(f"Length of labels (y list): {len(y)}")
-#print(f"First element in feature list: {X[:4]}")
-#print(f"Feature List length: {len(X)}")
-
+	#For analysis of data/Analyzing possibility of overfitting
+#print(f"Min of Y: {np.min(y)}")
+#print(f"Max of Y: {np.max(y)}")
+#print(f"Min of X: {np.min(X)}")
+#print(f"Max of X: {np.max(X)}")
+#print(f"Counter: {Counter(y)}")
