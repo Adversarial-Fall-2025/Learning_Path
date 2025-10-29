@@ -1,2 +1,5 @@
 Notebooks/.ipynb_checkpoints
 .venv
+labels/
+samples/
+.idea
