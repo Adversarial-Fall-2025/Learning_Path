@@ -1,139 +1,154 @@
-import os
-import glob
 import numpy as np
-import rasterio
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import matplotlib.pyplot as plt
-from collections import Counter
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.decomposition import PCA
 from sklearn.svm import SVC
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from sklearn.metrics import classification_report
+from PIL import Image
+from tqdm import tqdm
 
-# find mean of the pixels (rgb)
-# use labels
+class config:
+    image_size = (256, 256)
+    components = 100
 
 
-# -------------------------------
-# Paths
-# -------------------------------
-SAMPLES_PATH = "samples/samples/"
-LABELS_PATH = "labels/labels/"
+def load_rgb_images(folder, label, size=config.image_size):
+    images = []
+    labels = []
+    for filename in tqdm(os.listdir(folder), desc=f"Loading RGB from {folder}"):
+        if filename.endswith('.jpg') or filename.endswith('.tiff'):
+            img_path = os.path.join(folder, filename)
+            img = Image.open(img_path).convert('RGB').resize(size)
+            images.append(np.array(img).flatten())
+            labels.append(label)
+    return images, labels
 
-# Get all .tiff files sorted alphabetically
-sample_files = sorted(glob.glob(os.path.join(SAMPLES_PATH, "*.tiff")))
-label_files = sorted(glob.glob(os.path.join(LABELS_PATH, "*.tiff")))
 
-print(f"Found {len(sample_files)} sample tiles and {len(label_files)} label tiles.")
+def load_ndvi_images(folder, size=config.image_size):
+    images = []
+    filenames = []
+    for filename in tqdm(os.listdir(folder), desc=f"Loading NDVI from {folder}"):
+        if filename.endswith('.jpg') or filename.endswith('.tiff'):
+            img_path = os.path.join(folder, filename)
+            img = Image.open(img_path).resize(size)
+            images.append(np.array(img).flatten())
+            filenames.append(filename)
+    return images, filenames
 
-# -------------------------------
-# Load and Prepare Data
-# -------------------------------
-X_list, y_list = [], []
 
-for sample_path, label_path in zip(sample_files, label_files):
-    with rasterio.open(sample_path) as s, rasterio.open(label_path) as l:
-        sample = s.read()   # (bands, height, width)
-        label = l.read(1)   # (height, width)
+# Define paths
+label_path = "labels/labels"   # NDVI images
+sample_path = "samples/samples" # RGB images
 
-        n_bands, height, width = sample.shape
-        X = sample.reshape(n_bands, -1).T
-        y = label.flatten()
+# Load RGB samples (training features)
+rgb_images, _ = load_rgb_images(sample_path, label=0)
+samples_array = np.array(rgb_images)
 
-        # Mask out invalid/no-data pixels
-        mask = (y > 0) & ~np.isnan(y)
-        X_list.append(X[mask])
-        y_list.append(y[mask])
+# Load NDVI labels (ground truth)
+ndvi_images, ndvi_filenames = load_ndvi_images(label_path)
+labels_array = np.array(ndvi_images)
 
-# Combine all tiles
-X = np.vstack(X_list)
-y = np.hstack(y_list)
-print("Combined dataset shape:", X.shape, y.shape)
+mean_ndvi = np.nanmean(labels_array, axis=1)
+threshold = np.median(mean_ndvi)
 
-# -------------------------------
-# Filter rare classes
-# -------------------------------
-class_counts = Counter(y)
-min_samples = 500   # remove classes with fewer pixels
-valid_classes = [cls for cls, count in class_counts.items() if count >= min_samples]
-mask = np.isin(y, valid_classes)
-X = X[mask]
-y = y[mask]
-print(f"\n✅ After filtering: {len(valid_classes)} valid classes, {len(y)} total samples")
+# Binary labels from NDVI
+y_labels = (mean_ndvi > threshold).astype(int)
 
-# -------------------------------
-# Optional: Take top N classes
-# -------------------------------
-top_n = 25
-top_classes = [cls for cls, _ in Counter(y).most_common(top_n)]
-mask = np.isin(y, top_classes)
-X = X[mask]
-y = y[mask]
-print(f"\n✅ Using top {top_n} classes, total samples: {len(y)}")
+print("Ground Truth Label Distribution (from NDVI):")
+print(f"Class 0 (Unhealthy): {np.sum(y_labels == 0)} images")
+print(f"Class 1 (Healthy):   {np.sum(y_labels == 1)} images")
+print(f"\nNDVI Threshold: {threshold:.4f}")
+print(f"Mean NDVI range: {mean_ndvi.min():.4f} to {mean_ndvi.max():.4f}")
 
-# -------------------------------
-# Normalize features
-# -------------------------------
-scaler = MinMaxScaler(feature_range=(-1, 1))
-X_scaled = scaler.fit_transform(X)
+X = samples_array
+y = y_labels
 
-# -------------------------------
-# Subsample per class for faster training
-# -------------------------------
-subset_size_per_class = 10000
-X_sub_list, y_sub_list = [], []
+print(f"Training data (RGB flattened): {X.shape}")
+print(f"Ground truth labels (NDVI):   {y.shape}")
 
-for cls in np.unique(y):
-    cls_indices = np.where(y == cls)[0]
-    chosen = cls_indices if len(cls_indices) <= subset_size_per_class else np.random.choice(cls_indices, subset_size_per_class, replace=False)
-    X_sub_list.append(X_scaled[chosen])
-    y_sub_list.append(y[chosen])
-
-X_sub = np.vstack(X_sub_list)
-y_sub = np.hstack(y_sub_list)
-print(f"\n✅ Subsampled dataset shape: {X_sub.shape}, {len(y_sub)} samples")
-
-# -------------------------------
-# Split train/test
-# -------------------------------
+# Split data
 X_train, X_test, y_train, y_test = train_test_split(
-    X_sub, y_sub, test_size=0.2, random_state=42, stratify=y_sub
+    X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# -------------------------------
-# Train Random Forest
-# -------------------------------
-svm = SVC(kernel='linear',C=10,  decision_function_shape='ovr')
-svm.fit(X_train, y_train)
+print(f"\nTrain set: {X_train.shape[0]} images")
+print(f"Test set:  {X_test.shape[0]} images")
 
-# -------------------------------
-# Evaluate
-# -------------------------------
-y_pred = svm.predict(X_test)
+# PCA
+pca = PCA(n_components=config.components)
+X_train_pca = pca.fit_transform(X_train)
+X_test_pca = pca.transform(X_test)
 
-print("\nAccuracy:", accuracy_score(y_test, y_pred))
-print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
-print("\nClassification Report:\n", classification_report(y_test, y_pred, zero_division=0))
+print("Original shape (before PCA):", X_train.shape)
+print("Shape after PCA:", X_train_pca.shape)
 
-# -------------------------------
-# Optional: Predict first tile
-# -------------------------------
-with rasterio.open(sample_files[0]) as src:
-    sample = src.read()
-    n_bands, height, width = sample.shape
-    X_tile = sample.reshape(n_bands, -1).T
-    X_tile_scaled = scaler.transform(X_tile)
-    pred_tile = svm.predict(X_tile_scaled).reshape(height, width)
+# SVM model
+svm = SVC(kernel='rbf', probability=True, random_state=42)
+svm.fit(X_train_pca, y_train)
 
-plt.figure(figsize=(8,6))
-plt.imshow(pred_tile, cmap='viridis')
-plt.title("Random Forest Vegetation Classification")
-plt.colorbar()
+y_pred = svm.predict(X_test_pca)
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+# SVM decision boundary visualization (2D PCA)
+clf = SVC(kernel='linear', random_state=42)
+clf.fit(X_train_pca[:, :2], y_train)
+
+X_2d = X_train_pca[:, :2]
+x_min, x_max = X_2d[:, 0].min() - 1, X_2d[:, 0].max() + 1
+y_min, y_max = X_2d[:, 1].min() - 1, X_2d[:, 1].max() + 1
+
+h = (x_max - x_min) / 200
+xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                     np.arange(y_min, y_max, h))
+Z = clf.decision_function(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
+
+plt.figure(figsize=(11, 9))
+plt.contourf(xx, yy, Z, levels=np.linspace(Z.min(), Z.max(), 50),
+             cmap='coolwarm', alpha=0.3)
+plt.contour(xx, yy, Z, colors='black', levels=[-1, 0, 1],
+            linewidths=[2, 3, 2], linestyles=['--', '-', '--'])
+plt.scatter(X_2d[:, 0], X_2d[:, 1], c=y_train, cmap='coolwarm',
+            s=35, edgecolors='white', linewidths=0.6, alpha=0.9)
+plt.scatter(clf.support_vectors_[:, 0], clf.support_vectors_[:, 1],
+            s=220, linewidth=2, facecolors='none',
+            edgecolors='darkblue', label='Support Vectors')
+
+plt.xlabel('Principal Component 1', fontsize=13, fontweight='bold')
+plt.ylabel('Principal Component 2', fontsize=13, fontweight='bold')
+plt.title('Linear SVM Decision Regions (2D PCA Projection)',
+          fontsize=16, fontweight='bold', pad=15)
+
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+
+legend_elements = [
+    Patch(facecolor='#f4a582', edgecolor='black', label='Unhealthy (0)'),
+    Patch(facecolor='#92c5de', edgecolor='black', label='Healthy (1)'),
+    Line2D([0], [0], color='black', linewidth=3, label='Decision Boundary'),
+    Line2D([0], [0], color='black', linestyle='--', linewidth=2, label='Margins (±1)'),
+    Line2D([0], [0], marker='o', color='w', markerfacecolor='none',
+           markeredgecolor='darkblue', markersize=12, markeredgewidth=2, label='Support Vectors')
+]
+
+plt.legend(handles=legend_elements, loc='upper right', fontsize=11, frameon=True)
+plt.grid(True, linestyle='--', alpha=0.4)
+plt.tight_layout()
 plt.show()
 
+# Summary stats
+theta = clf.coef_[0]
+theta0 = clf.intercept_[0]
+print("=" * 75)
+print("SVM (2D PCA Projection) Summary")
+print("=" * 75)
+print(f"Support vectors: {len(clf.support_vectors_)}")
+print(f"Class counts: {clf.n_support_}")
+print(f"Margin width: {2 / np.linalg.norm(theta):.4f}")
+print(f"Hyperplane: {theta[0]:.4f}*PC1 + {theta[1]:.4f}*PC2 + {theta0:.4f} = 0")
 
-
+y_pred_2d = clf.predict(X_2d)
+acc_2d = np.mean(y_pred_2d == y_train)
+print(f"Training accuracy (2D PCA): {acc_2d:.2%}")
+print(f"Variance explained (2 PCs): {np.sum(pca.explained_variance_ratio_[:2]) * 100:.2f}%")
+print("=" * 75)
