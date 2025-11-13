@@ -52,6 +52,8 @@ def feature_selection(NDVI_list):
 			y.append(1)
 		else:
 			y.append(0)
+	X = np.array(X)
+	y = np.array(y)
 	
 	return X,y
 
